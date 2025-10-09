@@ -1,0 +1,104 @@
+# Flutter/Dart/Pub
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+*.dart.js
+*.info.json
+*.js
+*.js.deps
+*.js.map
+
+# Symbolic links created by Flutter for iOS/Mac builds
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+ios/Flutter/App.framework
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+macos/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.*
+
+# Android
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/.idea/
+android/app/release/
+android/app/profile/
+android/app/debug/
+android/key.properties
+*.jks
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+ios/Flutter/App.framework
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Runner.xcworkspace/
+ios/.generated/
+
+# macOS
+macos/Pods/
+macos/.symlinks/
+macos/Flutter/Flutter-Debug.xcconfig
+macos/Flutter/Flutter-Release.xcconfig
+macos/Flutter/Generated.xcconfig
+macos/Flutter/ephemeral/
+
+# Windows
+windows/flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/
+
+# Web
+web/.dart_tool/
+web/build/
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+.history/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+*.xcworkspace/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Misc
+*.lock
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+*.bak
+*.old
+
+# Firebase / Secrets (optional but recommended)
+google-services.json
+GoogleService-Info.plist
+.env
+*.keystore
+*.pem
+*.p12
+*.key
+
+# Coverage
+coverage/
