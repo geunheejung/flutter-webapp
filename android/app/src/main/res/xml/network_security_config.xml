@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- 개발용: 특정 호스트만 HTTP 허용 -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain>10.0.2.2</domain>
+    <domain>localhost</domain>
+    <domain>127.0.0.1</domain>
+  </domain-config>
+</network-security-config>

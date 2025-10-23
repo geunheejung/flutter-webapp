@@ -1,7 +1,8 @@
-import 'dart:io'; // Platform 분기
+import 'dart:collection';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:url_launcher/url_launcher.dart'; // 외부 스킴 처리
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +15,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter + Next.js',
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple)),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
       home: const MyHomePage(title: 'Next.js in InAppWebView'),
     );
   }
@@ -28,19 +32,15 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-/// 👇 WidgetsBindingObserver 추가: 앱 라이프사이클 감지
 class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+  InAppWebViewController? _childController;
 
-  // 시뮬레이터/에뮬레이터 기본값 (실기기는 맥 IP로 바꾸세요)
-  late final String _devUrl = Platform.isIOS
-      ? "http://localhost:3000"   // iOS 시뮬레이터
-      : "http://10.0.2.2:3000";   // Android 에뮬레이터
+  late final String _devUrl = "http://10.0.2.2:3000";
 
   @override
   void initState() {
     super.initState();
-    // 👇 앱 라이프사이클 옵저버 등록
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -50,12 +50,9 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// 👇 Flutter 앱 상태 변화를 WebView(웹)로 통지
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_controller == null) return;
-
-    // 커스텀 이벤트를 window 로 디스패치 (웹에서 addEventListener('app:foreground'…) 로 수신)
     if (state == AppLifecycleState.resumed) {
       _dispatchToWeb("app:foreground");
     } else if (state == AppLifecycleState.paused) {
@@ -66,26 +63,165 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   Future<void> _dispatchToWeb(String eventName) async {
     try {
       await _controller?.evaluateJavascript(
-        source: "window.dispatchEvent(new Event('$eventName'));"
+        source: "window.dispatchEvent(new Event('$eventName'));",
       );
-    } catch (e) {
-      debugPrint("JS dispatch error: $e");
-    }
+    } catch (_) {}
   }
+
+  Future<void> _notifyParentOpened() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: "window.dispatchEvent(new Event('app:childWindowOpened'));",
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _notifyParentClosed() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: "window.dispatchEvent(new Event('app:childWindowClosed'));",
+      );
+    } catch (_) {}
+  }
+
+  bool _isHttp(WebUri u) {
+    final s = u.scheme.toLowerCase();
+    return s == 'http' || s == 'https';
+  }
+
+  // ====== NEW: 풀스크린 + 좌/상 5% 비움 Dialog ======
+  Future<void> openChildWebViewDialog(
+    BuildContext context, {
+    required CreateWindowAction req,
+  }) async {
+    await _notifyParentOpened();
+
+    final mq = MediaQuery.of(context);
+    final leftPad = mq.size.width * 0.05;  // 좌측 5%
+    final topPad  = mq.size.height * 0.05; // 상단 5%
+
+    Future<void> closeAndNotify() async {
+      Navigator.of(context, rootNavigator: true).maybePop();
+      await _notifyParentClosed();
+    }
+
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black54,
+      barrierLabel: 'child-webview',
+      pageBuilder: (_, __, ___) {
+        return Stack(
+          children: [
+            // 화면 전체를 덮는다
+            Positioned.fill(
+              // 좌/상 5%만 비우고 나머지 꽉 채움
+              left: leftPad,
+              top: topPad,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Scaffold(
+                  backgroundColor: Theme.of(context).dialogBackgroundColor,
+                  body: SafeArea(
+                    child: Column(
+                      children: [
+                        // 상단 바: 그랩핸들 + 닫기
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              top: 8, left: 12, right: 12, bottom: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outline
+                                      .withOpacity(0.4),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const Spacer(),
+                              IconButton(
+                                tooltip: '닫기',
+                                onPressed: closeAndNotify,
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // 자식 WebView (남은 영역을 정확히 차지)
+                        Expanded(
+                          child: InAppWebView(
+                            windowId:
+                                Platform.isAndroid ? req.windowId : null,
+                            initialUrlRequest: (Platform.isIOS ||
+                                    (Platform.isAndroid &&
+                                        req.windowId == null))
+                                ? req.request
+                                : null,
+                            initialSettings: InAppWebViewSettings(
+                              javaScriptEnabled: true,
+                              allowsInlineMediaPlayback: true,
+                              javaScriptCanOpenWindowsAutomatically: true,
+                              supportMultipleWindows: true,
+                              isInspectable: true,
+                            ),
+                            // 자식 WebView임을 알리는 이벤트
+                            initialUserScripts:
+                                UnmodifiableListView<UserScript>([
+                              UserScript(
+                                source:
+                                    "window.dispatchEvent(new Event('app:webviewIsChild'));",
+                                injectionTime:
+                                    UserScriptInjectionTime.AT_DOCUMENT_START,
+                              ),
+                            ]),
+                            onWebViewCreated: (child) =>
+                                _childController = child,
+                            onLoadStop: (c, url) =>
+                                debugPrint("🪟 Child loaded: $url"),
+                            // 자식 팝업 체인 방지 → 같은 창에서 로드
+                            onCreateWindow: (childCtrl, childReq) async {
+                              final u = childReq.request.url;
+                              if (u != null && _isHttp(u)) {
+                                await childCtrl.loadUrl(
+                                  urlRequest: URLRequest(url: u),
+                                );
+                                return false;
+                              }
+                              if (u != null && await canLaunchUrl(u)) {
+                                await launchUrl(u,
+                                    mode: LaunchMode.externalApplication);
+                                return false;
+                              }
+                              return false;
+                            },
+                            onCloseWindow: (_) async => closeAndNotify(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 150),
+      transitionBuilder: (ctx, anim, _, child) {
+        return FadeTransition(opacity: anim, child: child);
+      },
+    );
+  }
+  // ===============================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _controller?.reload(),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
         child: InAppWebView(
           initialUrlRequest: URLRequest(url: WebUri(_devUrl)),
@@ -93,29 +229,38 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             javaScriptEnabled: true,
             mediaPlaybackRequiresUserGesture: false,
             allowsInlineMediaPlayback: true,
-
-            // NextAuth / 팝업 / 디버깅 편의
-            sharedCookiesEnabled: true,                 // iOS 쿠키 공유
-            thirdPartyCookiesEnabled: true,             // (Android)
+            sharedCookiesEnabled: true,
+            thirdPartyCookiesEnabled: true,
             javaScriptCanOpenWindowsAutomatically: true,
             supportMultipleWindows: true,
-            isInspectable: true,                        // Safari/Chrome DevTools 허용
+            isInspectable: true,
           ),
+          onWebViewCreated: (c) => _controller = c,
+          onConsoleMessage: (controller, m) =>
+              debugPrint("📜 JS Console: ${m.message}"),
 
-          onWebViewCreated: (c) {
-            _controller = c;
-          },
-
-          // 팝업(window.open) → 같은 WebView로 열기
-          onCreateWindow: (c, req) async {
+          // window.open 처리
+          onCreateWindow: (controller, req) async {
             final target = req.request.url;
-            if (target != null) {
-              _controller?.loadUrl(urlRequest: URLRequest(url: target));
+
+            // ANDROID: windowId가 없으면 부모에서 열기
+            if (Platform.isAndroid && req.windowId == null) {
+              if (target != null && _isHttp(target)) {
+                await _controller?.loadUrl(urlRequest: URLRequest(url: target));
+                return false;
+              }
+              if (target != null && await canLaunchUrl(target)) {
+                await launchUrl(target, mode: LaunchMode.externalApplication);
+                return false;
+              }
+              return false;
             }
+
+            // iOS 또는 Android(windowId 있음): 커스텀 풀스크린 다이얼로그로 열기
+            await openChildWebViewDialog(context, req: req);
             return true;
           },
 
-          // 비-HTTP(s) 스킴은 외부 앱으로 넘김
           shouldOverrideUrlLoading: (c, nav) async {
             final url = nav.request.url;
             if (url == null) return NavigationActionPolicy.ALLOW;
@@ -127,27 +272,15 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 await launchUrl(url, mode: LaunchMode.externalApplication);
                 return NavigationActionPolicy.CANCEL;
               }
+              return NavigationActionPolicy.CANCEL;
             }
             return NavigationActionPolicy.ALLOW;
           },
 
-          // 로드 시점에 한 번 foreground 신호를 보내 초기 연결 유도(선택)
           onLoadStop: (c, url) async {
-            debugPrint("✅ stop: $url");
             await _dispatchToWeb("app:foreground");
           },
-
-          onLoadStart: (c, url) => debugPrint("➡️ start: $url"),
-          onReceivedError: (c, request, error) =>
-              debugPrint("❌ web error: ${error.description}"),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await _controller?.evaluateJavascript(
-              source: "console.log('Hello from Flutter!')");
-        },
-        child: const Icon(Icons.code),
       ),
     );
   }
